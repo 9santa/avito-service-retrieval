@@ -1,10 +1,11 @@
 from pathlib import Path
 
 import pandas as pd
+import pickle
 
 from src.data import load_data, build_train_item_corpus
 from src.metrics import build_labels, recall_at_k
-from src.retrieval import CharTfidfRetriever
+from src.char_tfidf_retriever import CharTfidfRetriever
 
 
 DATA_DIR = "data/raw"
@@ -67,12 +68,42 @@ def main():
     )
 
     # Candidate generation
-    predictions = retriever.retrieve(
-        val_queries,
+    unique_val_queries = (
+        val_part[["search_query_norm"]].drop_duplicates().reset_index(drop=True)
+    )
+
+    query_predictions = retriever.retrieve(
+        unique_val_queries,
         query_col="search_query_norm",
         k=50,
         batch_size=256,
     )
+
+    pred_by_text = {
+        unique_val_queries.loc[idx, "search_query_norm"]: pred
+        for idx, pred in query_predictions.items()
+    }
+
+    val_queries = val_part[
+        [
+            "query_signature",
+            "search_query_norm",
+        ]
+    ].drop_duplicates("query_signature")
+
+    predictions = {
+        row.query_signature: pred_by_text[row.search_query_norm]
+        for row in val_queries.itertuples()
+    }
+
+    # Save predictions
+    Path("artifacts/predictions").mkdir(parents=True, exist_ok=True)
+
+    with open(
+        "artifacts/predictions/char_tfidf_val.pkl",
+        "wb",
+    ) as f:
+        pickle.dump(predictions, f)
 
     # Metrics
     print()
