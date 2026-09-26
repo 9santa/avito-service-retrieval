@@ -50,7 +50,7 @@ def add_query_signature(df: pd.DataFrame):
 def make_validation_split(
     train: pd.DataFrame,
     val_size=0.2,
-    random_state=24,
+    random_state=42,
 ):
     """
     Разделяет train по нормализованному тексту запроса.

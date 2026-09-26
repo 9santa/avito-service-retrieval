@@ -51,3 +51,12 @@ def load_data(data_dir: str | Path = "data/raw"):
     items = pd.read_parquet(data_dir / "benchmark_items.parquet")
 
     return train, queries, items
+
+
+def build_train_item_corpus(train: pd.DataFrame):
+    """
+    Строит локальный корпус объявленний для validation.
+
+    Один item_id оставляем один раз.
+    """
+    return train[ITEM_COLS].drop_duplicates("item_id").reset_index(drop=True)
