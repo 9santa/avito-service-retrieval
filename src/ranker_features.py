@@ -116,6 +116,15 @@ FEATURE_NAMES = [
     "item_message_forbidden",
     "title_len_words",
     "item_params_len_words",
+    # microcat prior
+    "microcat_prior_score",
+    "microcat_prior_rank",
+    "microcat_top1_match",
+    "microcat_top3_match",
+    "microcat_top5_match",
+    "microcat_support",
+    "neighbor_query_sim_top1",
+    "neighbor_query_sim_mean5",
 ]
 
 
@@ -154,6 +163,7 @@ class RankerFeatureBuilder:
         queries: pd.DataFrame,
         predictions: dict,
         dense_local_scores: dict,
+        microcat_priors: dict,
         missing_rank=51,
         rrf_k=60,
     ):
@@ -163,6 +173,12 @@ class RankerFeatureBuilder:
 
         self.predictions = predictions
         self.dense_local_scores = dense_local_scores
+
+        # -------------------------------------------------------------
+        # microcats
+        # -------------------------------------------------------------
+        self.microcat_priors = microcat_priors
+        self.item_microcats = self._numeric_column("item_microcat_id", fill_value=-1)
 
         self.missing_rank = missing_rank
         self.rrf_k = rrf_k
@@ -232,7 +248,7 @@ class RankerFeatureBuilder:
                 "location": row["search_location_id"],
             }
 
-    def _numeric_column(self, name):
+    def _numeric_column(self, name, *, fill_value=0):
         """
         Helper method for numeric columns.
         """
@@ -241,7 +257,7 @@ class RankerFeatureBuilder:
                 self.items[name],
                 errors="coerce",
             )
-            .fillna(0)
+            .fillna(fill_value)
             .to_numpy(dtype=np.float32)
         )
 
@@ -437,6 +453,53 @@ class RankerFeatureBuilder:
 
         query_location_lt50 = float(query_location_count < 50)
 
+        # -----------------------------------------------------------------
+        # Microcat prior features
+        # -----------------------------------------------------------------
+
+        prior = self.microcat_priors.get(
+            query_id,
+            {
+                "microcats": [],
+                "scores": [],
+                "supports": [],
+                "neighbor_sim_top1": 0.0,
+                "neighbor_sim_mean5": 0.0,
+            },
+        )
+
+        prior_microcats = prior["microcats"]
+        prior_scores = prior["scores"]
+        prior_supports = prior["supports"]
+
+        microcat_score_map = {
+            microcat: score
+            for microcat, score in zip(
+                prior_microcats,
+                prior_scores,
+            )
+        }
+
+        microcat_rank_map = {
+            microcat: rank
+            for rank, microcat in enumerate(
+                prior_microcats,
+                start=1,
+            )
+        }
+
+        microcat_support_map = {
+            microcat: support
+            for microcat, support in zip(
+                prior_microcats,
+                prior_supports,
+            )
+        }
+
+        neighbor_query_sim_top1 = float(prior["neighbor_sim_top1"])
+
+        neighbor_query_sim_mean5 = float(prior["neighbor_sim_mean5"])
+
         for j, item_id in enumerate(candidates):
             item_row = self.item_row_by_id[item_id]
 
@@ -622,6 +685,39 @@ class RankerFeatureBuilder:
             message_forbidden = float(self.item_message_forbidden[item_row])
 
             # ---------------------------------------------------------
+            # Microcat prior
+            # ---------------------------------------------------------
+
+            item_microcat = int(self.item_microcats[item_row])
+
+            microcat_prior_score = float(
+                microcat_score_map.get(
+                    item_microcat,
+                    0.0,
+                )
+            )
+
+            microcat_prior_rank = float(
+                microcat_rank_map.get(
+                    item_microcat,
+                    21,
+                )
+            )
+
+            microcat_top1_match = float(item_microcat in prior_microcats[:1])
+
+            microcat_top3_match = float(item_microcat in prior_microcats[:3])
+
+            microcat_top5_match = float(item_microcat in prior_microcats[:5])
+
+            microcat_support = float(
+                microcat_support_map.get(
+                    item_microcat,
+                    0,
+                )
+            )
+
+            # ---------------------------------------------------------
             # Final row
             # ---------------------------------------------------------
 
@@ -674,6 +770,15 @@ class RankerFeatureBuilder:
                 message_forbidden,
                 title_len,
                 item_params_len,
+                # microcat prior
+                microcat_prior_score,
+                microcat_prior_rank,
+                microcat_top1_match,
+                microcat_top3_match,
+                microcat_top5_match,
+                microcat_support,
+                neighbor_query_sim_top1,
+                neighbor_query_sim_mean5,
             ]
 
         return candidates, X

@@ -54,6 +54,8 @@ PREDICTION_FILES = {
 
 DENSE_LOCAL_SCORES_PATH = PRED_DIR / "dense_local_scores_val.pkl"
 
+MICROCAT_PRIOR_PATH = Path("artifacts/features/microcat_prior_val.pkl")
+
 
 # ---------------------------------------------------------------------
 # Meta split
@@ -169,6 +171,12 @@ def main():
     )
 
     dense_local_scores = load_pickle(DENSE_LOCAL_SCORES_PATH)
+
+    # =================================================================
+    # Load microcat prior
+    # =================================================================
+
+    microcat_priors = load_pickle(MICROCAT_PRIOR_PATH)
 
     # =================================================================
     # Meta train / eval split
@@ -344,6 +352,7 @@ def main():
         queries=queries,
         predictions=predictions,
         dense_local_scores=(dense_local_scores),
+        microcat_priors=microcat_priors,
         missing_rank=51,
         rrf_k=60,
     )
