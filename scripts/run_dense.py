@@ -5,7 +5,7 @@ import pickle
 
 from src.data import load_data, build_train_item_corpus
 from src.metrics import build_labels, recall_at_k
-from src.dense_retriever import DenseRetriver
+from src.dense_retriever import GlobalDenseRetriver
 
 
 DATA_DIR = "data/raw"
@@ -50,7 +50,7 @@ def main():
     print(f"Validation signatures: {len(val_queries)}")
 
     # Обучаем dense retriever
-    retriever = DenseRetriver(
+    retriever = GlobalDenseRetriver(
         model_name="intfloat/multilingual-e5-base",
         batch_size=64,
         max_seq_len=256,

@@ -13,7 +13,7 @@ def build_dense_item_text(items: pd.DataFrame):
     return "passage: " + title + " " + params
 
 
-class DenseRetriver:
+class GlobalDenseRetriver:
     def __init__(
         self,
         model_name="intfloat/multilingual-e5-base",
@@ -69,10 +69,7 @@ class DenseRetriver:
         query_col="search_query_norm",
         k=50,
     ):
-        texts = (
-            "query: "
-            + queries[query_col].fillna("").astype(str)
-        )
+        texts = "query: " + queries[query_col].fillna("").astype(str)
 
         query_embeddings = self.model.encode(
             texts.tolist(),
