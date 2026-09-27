@@ -3,5 +3,6 @@ artifacts/
 
 __pycache__/
 *.py[cod]
+.venv/
 
 notes.md
