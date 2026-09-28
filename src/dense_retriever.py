@@ -9,12 +9,12 @@ from tqdm import tqdm
 from src.local_dense_retriever import build_dense_query_text
 
 
-def build_dense_item_text(items: pd.DataFrame):
+def build_dense_item_text(items: pd.DataFrame, prefix="passage: "):
     title = items["item_title_raw"].fillna("").astype(str)
     params = items["item_infm_params_text"].fillna("").astype(str)
 
     # This is the layout intfloat/multilingual-e5-base wants
-    return "passage: " + title + " " + params
+    return prefix + title + " " + params
 
 
 class GlobalDenseRetriever:
@@ -25,6 +25,8 @@ class GlobalDenseRetriever:
         max_seq_len=256,
         device="cuda",
         fp16=False,
+        item_prefix="passage: ",
+        query_prefix="query: ",
     ):
         self.model = SentenceTransformer(
             model_name,
@@ -37,6 +39,8 @@ class GlobalDenseRetriever:
             self.model.half()
 
         self.batch_size = batch_size
+        self.item_prefix = item_prefix
+        self.query_prefix = query_prefix
         self.index = None
         self.item_ids = None
 
@@ -84,7 +88,7 @@ class GlobalDenseRetriever:
 
             return self
 
-        texts = build_dense_item_text(items)
+        texts = build_dense_item_text(items, prefix=self.item_prefix)
 
         dim = self.model.get_sentence_embedding_dimension()
 
@@ -127,10 +131,11 @@ class GlobalDenseRetriever:
 
         if "search_infm_params_text" in queries:
             texts = build_dense_query_text(
-                queries.assign(search_query_norm=queries[query_col])
+                queries.assign(search_query_norm=queries[query_col]),
+                prefix=self.query_prefix,
             )
         else:
-            texts = "query: " + queries[query_col].fillna("").astype(str)
+            texts = self.query_prefix + queries[query_col].fillna("").astype(str)
 
         codes, unique_texts = pd.factorize(texts, sort=False)
         print("Unique semantic queries:", len(unique_texts))
@@ -161,4 +166,3 @@ class GlobalDenseRetriever:
         if return_scores:
             return predictions, prediction_scores
         return predictions
-

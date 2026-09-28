@@ -144,7 +144,22 @@ def select_top_k(
 # =====================================================================
 
 
-def main():
+def main(
+    *,
+    model_name=MODEL_NAME,
+    encode_batch_size=ENCODE_BATCH_SIZE,
+    max_seq_length=MAX_SEQ_LENGTH,
+    query_prefix="query: ",
+    item_embeddings_path=ITEM_EMBEDDINGS_PATH,
+    item_ids_cache_path=ITEM_IDS_CACHE_PATH,
+    pred_dir=PRED_DIR,
+    dense_local_path=DENSE_LOCAL_PATH,
+    dense_global_path=DENSE_GLOBAL_PATH,
+    cutoffs=None,
+):
+    cutoffs = CUTOFFS if cutoffs is None else cutoffs
+    max_microcats = max(cutoffs)
+
     # -----------------------------------------------------------------
     # Load corpus / validation
     # -----------------------------------------------------------------
@@ -198,7 +213,7 @@ def main():
     print("=" * 80)
 
     item_embeddings = np.load(
-        ITEM_EMBEDDINGS_PATH,
+        item_embeddings_path,
         mmap_mode="r",
     )
 
@@ -211,9 +226,9 @@ def main():
         raise ValueError("Item embedding count does not match corpus.")
 
     # Если cache IDs существует — дополнительно проверяем порядок.
-    if ITEM_IDS_CACHE_PATH.exists():
+    if item_ids_cache_path.exists():
         cached_ids = np.load(
-            ITEM_IDS_CACHE_PATH,
+            item_ids_cache_path,
             allow_pickle=True,
         )
 
@@ -357,19 +372,19 @@ def main():
     print("=" * 80)
 
     model = SentenceTransformer(
-        MODEL_NAME,
+        model_name,
         device="cuda",
     )
 
-    model.max_seq_length = MAX_SEQ_LENGTH
+    model.max_seq_length = max_seq_length
 
     model.half()
 
-    encoder_texts = ["query: " + text for text in unique_texts]
+    encoder_texts = [query_prefix + text for text in unique_texts]
 
     query_embeddings = model.encode(
         encoder_texts,
-        batch_size=(ENCODE_BATCH_SIZE),
+        batch_size=(encode_batch_size),
         normalize_embeddings=True,
         convert_to_numpy=True,
         show_progress_bar=True,
@@ -408,7 +423,7 @@ def main():
     result_rows = np.full(
         (
             n_unique,
-            MAX_MICROCATS,
+            max_microcats,
             PER_MICROCAT_K,
         ),
         -1,
@@ -418,7 +433,7 @@ def main():
     result_scores = np.full(
         (
             n_unique,
-            MAX_MICROCATS,
+            max_microcats,
             PER_MICROCAT_K,
         ),
         -np.inf,
@@ -445,7 +460,7 @@ def main():
             missing_prior += 1
             continue
 
-        predicted_microcats = prior["microcats"][:MAX_MICROCATS]
+        predicted_microcats = prior["microcats"][:max_microcats]
 
         for slot, microcat in enumerate(predicted_microcats):
             microcat = int(microcat)
@@ -603,7 +618,7 @@ def main():
     all_predictions = {}
     all_prediction_scores = {}
 
-    for cutoff in CUTOFFS:
+    for cutoff in cutoffs:
         print()
         print(f"Building top-{cutoff} microcat retrieval...")
 
@@ -676,9 +691,9 @@ def main():
 
     word_local = load_pickle(WORD_LOCAL_PATH)
 
-    dense_local = load_pickle(DENSE_LOCAL_PATH)
+    dense_local = load_pickle(dense_local_path)
 
-    dense_global = load_pickle(DENSE_GLOBAL_PATH)
+    dense_global = load_pickle(dense_global_path)
 
     current_sources = [
         char_local,
@@ -721,7 +736,7 @@ def main():
 
     results = []
 
-    for cutoff in CUTOFFS:
+    for cutoff in cutoffs:
         predictions = all_predictions[cutoff]
 
         print()
@@ -803,15 +818,15 @@ def main():
     print("SAVE")
     print("=" * 80)
 
-    PRED_DIR.mkdir(
+    pred_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    for cutoff in CUTOFFS:
-        pred_path = PRED_DIR / (f"dense_microcat_top{cutoff}_val.pkl")
+    for cutoff in cutoffs:
+        pred_path = pred_dir / (f"dense_microcat_top{cutoff}_val.pkl")
 
-        score_path = PRED_DIR / (f"dense_microcat_top{cutoff}_scores_val.pkl")
+        score_path = pred_dir / (f"dense_microcat_top{cutoff}_scores_val.pkl")
 
         with open(
             pred_path,

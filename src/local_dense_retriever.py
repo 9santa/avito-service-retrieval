@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
-def build_dense_item_text(items: pd.DataFrame) -> pd.Series:
+def build_dense_item_text(items: pd.DataFrame, prefix="passage: ") -> pd.Series:
     """
     Формирует текст объявления для encoder модели.
     """
@@ -14,10 +14,10 @@ def build_dense_item_text(items: pd.DataFrame) -> pd.Series:
 
     params = items["item_infm_params_text"].fillna("").astype(str)
 
-    return "passage: " + title + " " + params
+    return prefix + title + " " + params
 
 
-def build_dense_query_text(queries: pd.DataFrame) -> pd.Series:
+def build_dense_query_text(queries: pd.DataFrame, prefix="query: ") -> pd.Series:
     """
     Формирует текст поискового запроса.
 
@@ -30,7 +30,7 @@ def build_dense_query_text(queries: pd.DataFrame) -> pd.Series:
 
     params = queries["search_infm_params_text"].fillna("").astype(str)
 
-    return "query: " + query + " " + params
+    return prefix + query + " " + params
 
 
 class LocalDenseRetriever:
@@ -42,9 +42,13 @@ class LocalDenseRetriever:
         query_batch_size=128,
         max_seq_length=128,
         fp16=True,
+        item_prefix="passage: ",
+        query_prefix="query: ",
     ):
         self.model_name = model_name
         self.device = device
+        self.item_prefix = item_prefix
+        self.query_prefix = query_prefix
 
         self.encode_batch_size = encode_batch_size
         self.query_batch_size = query_batch_size
@@ -142,7 +146,7 @@ class LocalDenseRetriever:
 
         print("Encoding items...")
 
-        texts = build_dense_item_text(items)
+        texts = build_dense_item_text(items, prefix=self.item_prefix)
 
         self.item_embeddings = self.model.encode(
             texts.tolist(),
@@ -197,7 +201,7 @@ class LocalDenseRetriever:
         Кодируем только уникальные semantic queries.
         """
 
-        texts = build_dense_query_text(queries)
+        texts = build_dense_query_text(queries, prefix=self.query_prefix)
 
         # Например:
         #
