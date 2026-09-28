@@ -64,12 +64,14 @@ class LocalWordTfidfRetriever:
         self,
         queries: pd.DataFrame,
         k=50,
+        return_scores=False,
     ):
         query_texts = build_word_query_text(queries)
 
         query_matrix = self.vectorizer.transform(query_texts).tocsr()
 
         predictions = {}
+        predictions_scores = {}
 
         for row_pos, (query_key, row) in enumerate(queries.iterrows()):
             location = row["search_location_id"]
@@ -79,6 +81,7 @@ class LocalWordTfidfRetriever:
             # Если в корпусе такой location вообще отсутствует.
             if item_indices is None or len(item_indices) == 0:
                 predictions[query_key] = []
+                predictions_scores[query_key] = []
                 continue
 
             q = query_matrix[row_pos]
@@ -91,6 +94,7 @@ class LocalWordTfidfRetriever:
 
             if score_row.nnz == 0:
                 predictions[query_key] = []
+                predictions_scores[query_key] = []
                 continue
 
             data = score_row.data
@@ -111,7 +115,13 @@ class LocalWordTfidfRetriever:
             # local_cols — индексы внутри local_matrix.
             corpus_rows = item_indices[local_cols[top_pos]]
 
+            selected_scores = data[top_pos]
+
             predictions[query_key] = self.item_ids[corpus_rows].tolist()
+            predictions_scores[query_key] = selected_scores.astype(float).tolist()
+
+        if return_scores:
+            return (predictions, predictions_scores)
 
         return predictions
 
@@ -154,12 +164,14 @@ class LocalCharTfidfRetriever:
         self,
         queries,
         k=50,
+        return_scores=False,
     ):
         query_matrix = self.vectorizer.transform(
             queries["search_query_norm"].fillna("").astype(str)
         ).tocsr()
 
         predictions = {}
+        predictions_scores = {}
 
         for row_pos, (query_key, row) in enumerate(queries.iterrows()):
             location = row["search_location_id"]
@@ -168,6 +180,7 @@ class LocalCharTfidfRetriever:
 
             if item_indices is None or len(item_indices) == 0:
                 predictions[query_key] = []
+                predictions_scores[query_key] = []
                 continue
 
             local_matrix = self.item_matrix[item_indices]
@@ -178,6 +191,7 @@ class LocalCharTfidfRetriever:
 
             if score_row.nnz == 0:
                 predictions[query_key] = []
+                predictions_scores[query_key] = []
                 continue
 
             data = score_row.data
@@ -197,6 +211,12 @@ class LocalCharTfidfRetriever:
 
             corpus_rows = item_indices[local_cols[top_pos]]
 
+            selected_scores = data[top_pos]
+
             predictions[query_key] = self.item_ids[corpus_rows].tolist()
+            predictions_scores[query_key] = selected_scores.astype(float).tolist()
+
+        if return_scores:
+            return (predictions, predictions_scores)
 
         return predictions

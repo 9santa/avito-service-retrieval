@@ -16,6 +16,7 @@ DATA_DIR = "data/raw"
 VAL_PATH = "data/interim/val_part.parquet"
 
 OUTPUT_PATH = Path("artifacts/predictions/word_local_val.pkl")
+SCORES_PATH = Path("artifacts/predictions/word_local_scores_val.pkl")
 
 
 def main():
@@ -70,9 +71,10 @@ def main():
         len(retriever.location_to_indices),
     )
 
-    predictions = retriever.retrieve(
+    predictions, prediction_scores = retriever.retrieve(
         val_queries,
         k=50,
+        return_scores=True,
     )
 
     print()
@@ -109,6 +111,19 @@ def main():
 
     print()
     print("Saved:", OUTPUT_PATH)
+
+    with open(SCORES_PATH, "wb") as f:
+        pickle.dump(
+            prediction_scores,
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+
+    print()
+    print(
+        "Saved scores:",
+        SCORES_PATH,
+    )
 
 
 if __name__ == "__main__":
