@@ -1,3 +1,5 @@
+"""Создаёт фиксированный cold-query train/validation split."""
+
 from pathlib import Path
 
 from src.data import load_data

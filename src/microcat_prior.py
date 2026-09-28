@@ -1,3 +1,5 @@
+"""Nearest-query microcategory prior, переносимый с исторических кликов на cold queries."""
+
 from collections import defaultdict
 
 import re
@@ -10,6 +12,8 @@ from tqdm import tqdm
 
 
 def normalize_text(value) -> str:
+    """Нормализует query/params перед дедупликацией semantic queries."""
+
     if value is None:
         return ""
 
@@ -47,6 +51,8 @@ def build_semantic_text(df: pd.DataFrame):
 
 
 class MicrocatPrior:
+    """Переносит распределение clicked microcats от ближайших historical queries."""
+
     def __init__(
         self,
         model_name="intfloat/multilingual-e5-base",
@@ -87,6 +93,8 @@ class MicrocatPrior:
     # -----------------------------------------------------------------
 
     def fit(self, train_part: pd.DataFrame):
+        """Строит P(microcat | historical query) и exact E5 index по historical queries."""
+
         required = [
             "search_query_norm",
             "search_infm_params_text",
@@ -205,6 +213,8 @@ class MicrocatPrior:
     # -----------------------------------------------------------------
 
     def predict(self, queries: pd.DataFrame):
+        """Агрегирует microcat priors от top-N semantic neighbors для каждой query signature."""
+
         if self.index is None:
             raise RuntimeError("Index isn't ready. Call fit() first")
 

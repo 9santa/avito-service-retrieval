@@ -1,3 +1,5 @@
+"""Глобальный dense retrieval на multilingual-e5-base с exact FAISS inner-product search."""
+
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +20,8 @@ def build_dense_item_text(items: pd.DataFrame, prefix="passage: "):
 
 
 class GlobalDenseRetriever:
+    """Exact global E5 retrieval по всему item corpus через FAISS IndexFlatIP."""
+
     def __init__(
         self,
         model_name="intfloat/multilingual-e5-base",
@@ -51,6 +55,8 @@ class GlobalDenseRetriever:
         embedding_ids_path=None,
         index_add_batch_size=20_000,
     ):
+        """Строит exact FAISS index из готовых embeddings или кодирует corpus по чанкам."""
+
         self.item_ids = items["item_id"].to_numpy()
 
         if embeddings_path is not None:
@@ -123,6 +129,8 @@ class GlobalDenseRetriever:
         k=50,
         return_scores=False,
     ):
+        """Ищет top-k по semantic query: query + search params и опционально возвращает cosine scores."""
+
         if self.index is None:
             raise RuntimeError("Call fit() before retrieve().")
 
@@ -160,8 +168,12 @@ class GlobalDenseRetriever:
             semantic_idx = codes[i]
             valid = indices[semantic_idx] >= 0
 
-            predictions[query_key] = self.item_ids[indices[semantic_idx][valid]].tolist()
-            prediction_scores[query_key] = scores[semantic_idx][valid].astype(float).tolist()
+            predictions[query_key] = self.item_ids[
+                indices[semantic_idx][valid]
+            ].tolist()
+            prediction_scores[query_key] = (
+                scores[semantic_idx][valid].astype(float).tolist()
+            )
 
         if return_scores:
             return predictions, prediction_scores

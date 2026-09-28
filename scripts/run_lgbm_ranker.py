@@ -1,3 +1,5 @@
+"""Обучает rich LightGBM LambdaRank selector на union retrieval-кандидатов."""
+
 import gc
 import pickle
 from pathlib import Path

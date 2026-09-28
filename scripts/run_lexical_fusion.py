@@ -1,3 +1,5 @@
+"""Оценивает RRF и union глобальных lexical baseline-ов."""
+
 import pickle
 from pathlib import Path
 

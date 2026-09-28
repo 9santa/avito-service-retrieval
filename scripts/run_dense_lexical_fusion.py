@@ -1,3 +1,5 @@
+"""Оценивает ранние global lexical+dense fusion baseline-ы."""
+
 import pickle
 from pathlib import Path
 

@@ -52,10 +52,14 @@ def load_retrieval_data():
     train = pd.read_parquet("data/raw/train.parquet")
     items = build_train_item_corpus(train)
     queries = (
-        pd.read_parquet(VAL_PATH)[[
-            "query_signature", "search_query_norm",
-            "search_infm_params_text", "search_location_id",
-        ]]
+        pd.read_parquet(VAL_PATH)[
+            [
+                "query_signature",
+                "search_query_norm",
+                "search_infm_params_text",
+                "search_location_id",
+            ]
+        ]
         .drop_duplicates("query_signature")
         .set_index("query_signature")
     )
@@ -126,20 +130,31 @@ def compare_predictions(labels, baseline, experiment):
         for k in cutoffs:
             old = recall_at_k(labels, before, k=k)
             new = recall_at_k(labels, after, k=k)
-            rows.append({
-                "retrieval": name,
-                "metric": "pool_recall" if name == "full_pool" else f"recall@{k}",
-                "e5": old,
-                "bge_m3": new,
-                "delta_pp": 100 * (new - old),
-                "relative_gain_pct": 100 * (new / old - 1) if old else None,
-            })
+            rows.append(
+                {
+                    "retrieval": name,
+                    "metric": "pool_recall" if name == "full_pool" else f"recall@{k}",
+                    "e5": old,
+                    "bge_m3": new,
+                    "delta_pp": 100 * (new - old),
+                    "relative_gain_pct": 100 * (new / old - 1) if old else None,
+                }
+            )
 
     for source in SCORE_FILES:
         compare(source, baseline[source], experiment[source])
     for name, sources in [
         ("rrf_local", ["dense_local", "char_local", "word_local"]),
-        ("rrf_all", ["dense_local", "char_local", "word_local", "dense_global", "dense_microcat"]),
+        (
+            "rrf_all",
+            [
+                "dense_local",
+                "char_local",
+                "word_local",
+                "dense_global",
+                "dense_microcat",
+            ],
+        ),
     ]:
         before = rrf_fusion([baseline[source] for source in sources], k=50, rrf_k=60)
         after = rrf_fusion([experiment[source] for source in sources], k=50, rrf_k=60)
@@ -158,13 +173,19 @@ def evaluate(output_dir):
     for source, filename in PREDICTION_FILES.items():
         baseline[source] = load_pickle(BASELINE_DIR / filename)
         experiment[source] = (
-            baseline[source] if source in ("char_local", "word_local")
+            baseline[source]
+            if source in ("char_local", "word_local")
             else load_pickle(output_dir / "predictions" / filename)
         )
-        for name, predictions in [("E5", baseline[source]), ("BGE-M3", experiment[source])]:
+        for name, predictions in [
+            ("E5", baseline[source]),
+            ("BGE-M3", experiment[source]),
+        ]:
             missing = set(labels) - predictions.keys()
             if missing:
-                raise ValueError(f"{name} {source}: missing {len(missing)} validation queries")
+                raise ValueError(
+                    f"{name} {source}: missing {len(missing)} validation queries"
+                )
         # Match query coverage and ordering, including for fusion's first source.
         baseline[source] = {query: baseline[source][query] for query in labels}
         experiment[source] = {query: experiment[source][query] for query in labels}
@@ -178,7 +199,9 @@ def evaluate(output_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=("all", *STAGES), default="all")
-    parser.add_argument("--output-dir", type=Path, default=Path("artifacts/ablations/bge_m3"))
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("artifacts/ablations/bge_m3")
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     args = parser.parse_args()
     if args.batch_size < 1:
@@ -208,13 +231,28 @@ def main():
 
     if args.stage == "all":
         for stage in STAGES:
-            print(f"Running {stage}; log: {args.output_dir / (stage + '.log')}", flush=True)
+            print(
+                f"Running {stage}; log: {args.output_dir / (stage + '.log')}",
+                flush=True,
+            )
             with (args.output_dir / f"{stage}.log").open("w") as log:
-                subprocess.run([
-                    sys.executable, "-u", "-m", "scripts.run_bge_m3_ablation",
-                    "--stage", stage, "--output-dir", str(args.output_dir),
-                    "--batch-size", str(args.batch_size),
-                ], stdout=log, stderr=subprocess.STDOUT, check=True)
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-u",
+                        "-m",
+                        "scripts.run_bge_m3_ablation",
+                        "--stage",
+                        stage,
+                        "--output-dir",
+                        str(args.output_dir),
+                        "--batch-size",
+                        str(args.batch_size),
+                    ],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
         print((args.output_dir / "comparison.csv").read_text())
         return
 

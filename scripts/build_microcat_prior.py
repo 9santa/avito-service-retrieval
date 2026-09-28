@@ -1,3 +1,5 @@
+"""Строит leakage-safe nearest-query microcat prior для validation."""
+
 import pickle
 from pathlib import Path
 

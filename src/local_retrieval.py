@@ -1,13 +1,16 @@
+"""
+Location-aware lexical retrieval: отдельный поиск внутри search_location_id.
+Local = используем жесткую привязку по локации.
+"""
+
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-"""
-Local = используем жесткую привязку по локации
-"""
-
 
 def build_word_item_text(items: pd.DataFrame):
+    """Item text local word retriever: title усиливается повторением."""
+
     title = items["item_title_raw"].fillna("").astype(str)
 
     params = items["item_infm_params_text"].fillna("").astype(str)
@@ -17,6 +20,8 @@ def build_word_item_text(items: pd.DataFrame):
 
 
 def build_word_query_text(queries: pd.DataFrame):
+    """Query text объединяет нормализованный запрос и структурированные search params."""
+
     query = queries["search_query_norm"].fillna("").astype(str)
 
     params = queries["search_infm_params_text"].fillna("").astype(str)
@@ -25,6 +30,8 @@ def build_word_query_text(queries: pd.DataFrame):
 
 
 class LocalWordTfidfRetriever:
+    """Word TF-IDF retrieval внутри search_location_id с сохранением raw cosine score."""
+
     def __init__(
         self,
         ngram_range=(1, 2),
@@ -44,6 +51,8 @@ class LocalWordTfidfRetriever:
         self.location_to_indices = None
 
     def fit(self, items: pd.DataFrame):
+        """Индексирует весь corpus один раз и сохраняет mapping location -> matrix rows."""
+
         item_texts = build_word_item_text(items)
 
         self.item_matrix = self.vectorizer.fit_transform(item_texts).tocsr()
@@ -66,6 +75,8 @@ class LocalWordTfidfRetriever:
         k=50,
         return_scores=False,
     ):
+        """Ищет top-k только среди items той же location; пустая location даёт пустой список."""
+
         query_texts = build_word_query_text(queries)
 
         query_matrix = self.vectorizer.transform(query_texts).tocsr()
@@ -127,6 +138,8 @@ class LocalWordTfidfRetriever:
 
 
 class LocalCharTfidfRetriever:
+    """Character TF-IDF по title внутри search_location_id."""
+
     def __init__(
         self,
         ngram_range=(3, 5),
@@ -145,6 +158,8 @@ class LocalCharTfidfRetriever:
         self.location_to_indices = None
 
     def fit(self, items: pd.DataFrame):
+        """Индексирует весь corpus один раз и сохраняет mapping location -> matrix rows."""
+
         item_texts = items["item_title_raw"].fillna("").astype(str)
 
         self.item_matrix = self.vectorizer.fit_transform(item_texts).tocsr()
@@ -166,6 +181,8 @@ class LocalCharTfidfRetriever:
         k=50,
         return_scores=False,
     ):
+        """Возвращает local top-k и опционально TF-IDF cosine scores."""
+
         query_matrix = self.vectorizer.transform(
             queries["search_query_norm"].fillna("").astype(str)
         ).tocsr()

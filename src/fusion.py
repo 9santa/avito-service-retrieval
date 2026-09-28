@@ -1,3 +1,5 @@
+"""Простые способы объединения списков кандидатов: RRF, union и local/global quota."""
+
 from collections import defaultdict
 
 

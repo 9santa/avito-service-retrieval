@@ -1,3 +1,5 @@
+"""Проверяет microcat-guided dense retrieval для нескольких глубин microcat prior."""
+
 import gc
 import pickle
 from collections import defaultdict

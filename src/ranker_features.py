@@ -1,3 +1,5 @@
+"""Построение query-item признаков для выбора top-50 из union нескольких retrieval-источников."""
+
 import re
 from functools import lru_cache
 
@@ -12,6 +14,8 @@ from tqdm import tqdm
 
 
 def normalize_text(value) -> str:
+    """Лёгкая нормализация для pairwise lexical overlap features."""
+
     if value is None:
         return ""
 
@@ -144,13 +148,7 @@ FEATURE_NAMES = [
 
 class RankerFeatureBuilder:
     """
-    Строит признаки для union:
-
-        char_local
-        word_local
-        dense_local
-        dense_global
-        dense_microcat
+    Строит признаки для union семи retrieval-источников.
 
     Важное:
     - candidate pool НЕ ограничиваем top-50;
@@ -273,7 +271,7 @@ class RankerFeatureBuilder:
 
     def _numeric_column(self, name, *, fill_value=0):
         """
-        Helper method for numeric columns.
+        Преобразует item metadata в numeric ndarray с единым fill value.
         """
         return (
             pd.to_numeric(
@@ -295,6 +293,8 @@ class RankerFeatureBuilder:
         self,
         row_idx,
     ):
+        """Кэширует нормализованный item text и tokens для повторных pair features."""
+
         title = normalize_text(self.item_titles[row_idx])
 
         params = normalize_text(self.item_params[row_idx])
@@ -320,7 +320,7 @@ class RankerFeatureBuilder:
         query_id,
     ):
         """
-        Union всех 5 источников без ограничения k=50.
+        Ordered union всех retrieval-источников без ограничения k=50.
         """
         # Так как set не сохраняет порядок, используем список
         result = []
@@ -430,6 +430,8 @@ class RankerFeatureBuilder:
         self,
         query_id,
     ):
+        """Строит candidate list и feature matrix для одной query group."""
+
         (
             candidates,
             rank_maps,
@@ -988,6 +990,8 @@ class RankerFeatureBuilder:
         all_query_ids=None,
         k=50,
     ):
+        """Преобразует flat model scores обратно в top-k item_id по query group boundaries."""
+
         if all_query_ids is None:
             predictions = {}
         else:

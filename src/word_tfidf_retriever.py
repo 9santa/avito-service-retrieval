@@ -1,3 +1,5 @@
+"""Глобальный word TF-IDF baseline."""
+
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,6 +18,8 @@ def build_item_text(items: pd.DataFrame):
 
 
 class WordTfidfRetriever:
+    """Word unigram/bigram TF-IDF retriever для глобального lexical baseline."""
+
     def __init__(
         self,
         ngram_range=(1, 2),
@@ -34,6 +38,8 @@ class WordTfidfRetriever:
         self.item_ids = None
 
     def fit(self, items):
+        """Обучает vectorizer и индексирует корпус объявлений."""
+
         item_texts = build_item_text(items)
 
         self.item_matrix = self.vectorizer.fit_transform(item_texts)
@@ -48,6 +54,8 @@ class WordTfidfRetriever:
         k=50,
         batch_size=256,
     ):
+        """Возвращает top-k cosine TF-IDF кандидатов по каждой query row."""
+
         query_matrix = self.vectorizer.transform(queries[query_col].fillna(""))
 
         predictions = {}

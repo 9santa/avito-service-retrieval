@@ -1,3 +1,5 @@
+"""Оценивает RRF и pool coverage двух location-aware lexical retriever-ов."""
+
 import pickle
 from pathlib import Path
 

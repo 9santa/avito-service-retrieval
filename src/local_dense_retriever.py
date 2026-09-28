@@ -1,3 +1,5 @@
+"""Location-aware dense retrieval на multilingual-e5-base."""
+
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +36,8 @@ def build_dense_query_text(queries: pd.DataFrame, prefix="query: ") -> pd.Series
 
 
 class LocalDenseRetriever:
+    """Exact E5 retrieval внутри location; item embeddings переиспользуются между запросами."""
+
     def __init__(
         self,
         model_name="intfloat/multilingual-e5-base",
@@ -127,8 +131,6 @@ class LocalDenseRetriever:
                 if same_ids:
                     print(f"Loading embeddings: {embeddings_path}")
 
-                    # Обычный np.load:
-                    # весь массив загружается в RAM.
                     self.item_embeddings = np.load(embeddings_path)
 
                     print(

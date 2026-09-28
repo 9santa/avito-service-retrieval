@@ -1,3 +1,5 @@
+"""Загрузка исходных parquet-файлов и построение корпуса объявлений для локальной валидации."""
+
 from pathlib import Path
 
 import pandas as pd

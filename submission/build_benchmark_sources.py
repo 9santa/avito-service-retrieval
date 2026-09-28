@@ -1,3 +1,5 @@
+"""Строит семь benchmark candidate sources и все score/prior artifacts для финального ranker-а."""
+
 import gc
 import pickle
 from collections import defaultdict
@@ -7,7 +9,6 @@ import faiss
 import numpy as np
 import pandas as pd
 import torch
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 from src.data import load_data
@@ -47,6 +48,8 @@ def save_pickle(obj, path):
 
 
 def build_desc_text(items):
+    """Формирует E5 passage text с description для отдельной dense-ветки."""
+
     title = items["item_title_raw"].fillna("").astype(str)
 
     params = items["item_infm_params_text"].fillna("").astype(str)
@@ -61,6 +64,8 @@ def build_desc_embeddings(
     items,
     path,
 ):
+    """Кодирует description corpus в mmap-cache, чтобы не держать весь массив в RAM."""
+
     if path.exists():
         print("Loading:", path)
 
@@ -126,6 +131,8 @@ def global_dense_search(
     item_embeddings,
     item_ids,
 ):
+    """Exact global top-50 по нормализованным embeddings через временный FAISS index."""
+
     dim = item_embeddings.shape[1]
 
     index = faiss.IndexFlatIP(dim)
@@ -185,6 +192,8 @@ def local_dense_search(
     item_embeddings,
     item_ids,
 ):
+    """Exact dense search только внутри items соответствующей search_location_id."""
+
     location_to_rows = {
         location: group.index.to_numpy(dtype=np.int32)
         for location, group in items.groupby(
@@ -254,6 +263,8 @@ def dense_microcat_top1(
     item_ids,
     priors,
 ):
+    """Dense microcat source: search globally only inside top-1 predicted microcategory."""
+
     item_microcats = (
         pd.to_numeric(
             items["item_microcat_id"],

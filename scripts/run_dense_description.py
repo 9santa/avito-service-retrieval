@@ -1,4 +1,3 @@
-import gc
 import pickle
 from collections import defaultdict
 from pathlib import Path
@@ -71,14 +70,12 @@ MODEL_NAME = "intfloat/multilingual-e5-base"
 # Description делает sequences длиннее.
 MAX_SEQ_LENGTH = 256
 
+# Batch size внутри model.encode().
+# Это ограничивает в первую очередь GPU memory во время encoder inference.
 ENCODE_BATCH_SIZE = 64
 
-ITEM_ENCODE_CHUNK_SIZE = 2048
-
+# Query batching local exact search.
 LOCAL_QUERY_BATCH_SIZE = 128
-LOCAL_ITEM_CHUNK_SIZE = 20_000
-
-GLOBAL_INDEX_ADD_BATCH = 20_000
 
 K = 50
 
@@ -96,8 +93,7 @@ def build_description_item_text(
 
         title + params + description
 
-    Не повторяем title и не вводим дополнительных tricks.
-    Хотим измерить именно вклад description.
+    Не повторяем title, хотим измерить именно вклад description.
     """
 
     title = items["item_title_raw"].fillna("").astype(str)
@@ -146,6 +142,13 @@ def build_or_load_item_embeddings(
     items,
     item_ids,
 ):
+    """
+    Строим item embeddings целиком в RAM.
+
+    Если cache уже существует и item IDs совпадают,
+    просто загружаем обычный NumPy array в RAM.
+    """
+
     EMBEDDING_DIR.mkdir(
         parents=True,
         exist_ok=True,
@@ -167,58 +170,30 @@ def build_or_load_item_embeddings(
 
             return np.load(
                 DESC_EMBEDDINGS_PATH,
-                mmap_mode="r",
             )
 
         print("Cached item IDs mismatch. Recomputing embeddings.")
 
     texts = build_description_item_text(items)
 
-    dim = model.get_sentence_embedding_dimension()
-
-    embeddings = np.lib.format.open_memmap(
-        DESC_EMBEDDINGS_PATH,
-        mode="w+",
-        dtype=np.float32,
-        shape=(
-            len(items),
-            dim,
-        ),
-    )
-
     print("Encoding description items...")
 
-    for start in tqdm(
-        range(
-            0,
-            len(items),
-            ITEM_ENCODE_CHUNK_SIZE,
-        ),
-        desc="Encoding items",
-    ):
-        end = min(
-            start + ITEM_ENCODE_CHUNK_SIZE,
-            len(items),
-        )
+    embeddings = model.encode(
+        texts.tolist(),
+        batch_size=ENCODE_BATCH_SIZE,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+        show_progress_bar=True,
+    ).astype(
+        np.float32,
+        copy=False,
+    )
 
-        chunk_texts = texts.iloc[start:end].tolist()
-
-        chunk_embeddings = model.encode(
-            chunk_texts,
-            batch_size=ENCODE_BATCH_SIZE,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=False,
-        ).astype(
-            np.float32,
-            copy=False,
-        )
-
-        embeddings[start:end] = chunk_embeddings
-
-    embeddings.flush()
-
-    del embeddings
+    # Сохраняем embeddings на диск
+    np.save(
+        DESC_EMBEDDINGS_PATH,
+        embeddings,
+    )
 
     np.save(
         DESC_ITEM_IDS_PATH,
@@ -226,18 +201,12 @@ def build_or_load_item_embeddings(
         allow_pickle=True,
     )
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
     print(
         "Saved embeddings:",
         DESC_EMBEDDINGS_PATH,
     )
 
-    return np.load(
-        DESC_EMBEDDINGS_PATH,
-        mmap_mode="r",
-    )
+    return embeddings
 
 
 # =====================================================================
@@ -247,12 +216,11 @@ def build_or_load_item_embeddings(
 
 def search_local_batch(
     query_embeddings,
-    item_indices,
-    item_embeddings,
+    local_item_embeddings,
     k=50,
 ):
     """
-    Exact cosine top-k.
+    Exact cosine top-k для batch queries внутри одной location.
 
     Все embeddings L2 normalized,
     поэтому dot product == cosine.
@@ -260,7 +228,7 @@ def search_local_batch(
 
     n_queries = len(query_embeddings)
 
-    n_items = len(item_indices)
+    n_items = len(local_item_embeddings)
 
     if n_items == 0:
         return (
@@ -279,133 +247,74 @@ def search_local_batch(
         n_items,
     )
 
-    best_scores = np.full(
-        (n_queries, k),
-        -np.inf,
-        dtype=np.float32,
-    )
+    # -----------------------------------------------------------------
+    # Exact cosine similarity
+    # -----------------------------------------------------------------
+    #
+    # query_embeddings:
+    #     (n_queries, embedding_dim)
+    #
+    # local_item_embeddings.T:
+    #     (embedding_dim, n_items)
+    #
+    # scores:
+    #     (n_queries, n_items)
+    #
+    # Так как embeddings нормализованы,
+    # matrix multiplication == cosine similarity.
+    # -----------------------------------------------------------------
 
-    best_rows = np.full(
-        (n_queries, k),
-        -1,
-        dtype=np.int32,
-    )
+    scores = query_embeddings @ local_item_embeddings.T
 
-    for start in range(
-        0,
-        n_items,
-        LOCAL_ITEM_CHUNK_SIZE,
-    ):
-        end = min(
-            start + LOCAL_ITEM_CHUNK_SIZE,
-            n_items,
-        )
+    # -----------------------------------------------------------------
+    # Top-k для каждого query
+    # -----------------------------------------------------------------
 
-        rows = item_indices[start:end]
-
-        item_chunk = np.asarray(
-            item_embeddings[rows],
-            dtype=np.float32,
-        )
-
-        scores = query_embeddings @ item_chunk.T
-
-        chunk_k = min(
-            k,
-            scores.shape[1],
-        )
-
-        if scores.shape[1] <= chunk_k:
-            chunk_top = np.argsort(
-                scores,
-                axis=1,
-            )[:, ::-1]
-        else:
-            chunk_top = np.argpartition(
-                scores,
-                -chunk_k,
-                axis=1,
-            )[:, -chunk_k:]
-
-            unsorted_scores = np.take_along_axis(
-                scores,
-                chunk_top,
-                axis=1,
-            )
-
-            order = np.argsort(
-                unsorted_scores,
-                axis=1,
-            )[:, ::-1]
-
-            chunk_top = np.take_along_axis(
-                chunk_top,
-                order,
-                axis=1,
-            )
-
-        chunk_scores = np.take_along_axis(
+    if n_items <= k:
+        # Если items меньше либо равно k,
+        # просто полностью сортируем каждую строку.
+        top_positions = np.argsort(
             scores,
-            chunk_top,
             axis=1,
-        )
+        )[:, ::-1]
 
-        chunk_rows = rows[chunk_top]
-
-        candidate_scores = np.concatenate(
-            [
-                best_scores,
-                chunk_scores,
-            ],
-            axis=1,
-        )
-
-        candidate_rows = np.concatenate(
-            [
-                best_rows,
-                chunk_rows,
-            ],
-            axis=1,
-        )
-
-        keep = np.argpartition(
-            candidate_scores,
+    else:
+        # argpartition быстро находит k лучших positions,
+        # но не сортирует их между собой.
+        top_positions = np.argpartition(
+            scores,
             -k,
             axis=1,
         )[:, -k:]
 
-        best_scores = np.take_along_axis(
-            candidate_scores,
-            keep,
+        # Достаём scores только для найденных k кандидатов.
+        top_scores_unsorted = np.take_along_axis(
+            scores,
+            top_positions,
             axis=1,
         )
 
-        best_rows = np.take_along_axis(
-            candidate_rows,
-            keep,
+        # Сортируем уже только k кандидатов по убыванию score
+        order = np.argsort(
+            top_scores_unsorted,
+            axis=1,
+        )[:, ::-1]
+
+        top_positions = np.take_along_axis(
+            top_positions,
+            order,
             axis=1,
         )
 
-    order = np.argsort(
-        best_scores,
-        axis=1,
-    )[:, ::-1]
-
-    best_scores = np.take_along_axis(
-        best_scores,
-        order,
-        axis=1,
-    )
-
-    best_rows = np.take_along_axis(
-        best_rows,
-        order,
+    top_scores = np.take_along_axis(
+        scores,
+        top_positions,
         axis=1,
     )
 
     return (
-        best_rows,
-        best_scores,
+        top_positions,
+        top_scores,
     )
 
 
@@ -421,6 +330,14 @@ def retrieve_local(
     print("LOCAL DENSE + DESCRIPTION")
     print("=" * 80)
 
+    # Для каждой location заранее сохраняем row indices items.
+    #
+    # Например:
+    #     location A -> [0, 3, 8, 10]
+    #     location B -> [1, 2, 5, 7]
+    #
+    # Это routing: query сравнивается только с items
+    # той же location.
     location_to_item_indices = {
         location: group.index.to_numpy(dtype=np.int32)
         for location, group in items.groupby(
@@ -438,6 +355,10 @@ def retrieve_local(
     predictions = {}
     prediction_scores = {}
 
+    # -----------------------------------------------------------------
+    # Группируем query positions по location.
+    # -----------------------------------------------------------------
+
     for pos, location in enumerate(query_locations):
         query_id = query_ids[pos]
 
@@ -449,6 +370,10 @@ def retrieve_local(
             continue
 
         location_to_query_positions[location].append(pos)
+
+    # -----------------------------------------------------------------
+    # Exact search location-by-location.
+    # -----------------------------------------------------------------
 
     for location, positions in tqdm(
         location_to_query_positions.items(),
@@ -466,11 +391,19 @@ def retrieve_local(
 
             continue
 
+        # (n_local_items, embedding_dim)
+        local_item_embeddings = np.ascontiguousarray(
+            item_embeddings[item_indices],
+            dtype=np.float32,
+        )
+
         positions = np.asarray(
             positions,
             dtype=np.int32,
         )
 
+        # Query batching нужен, чтобы не строить сразу огромную матрицу:
+        # (all_queries_in_location x all_items_in_location)
         for start in range(
             0,
             len(positions),
@@ -485,21 +418,24 @@ def retrieve_local(
 
             q_emb = query_embeddings[batch_positions]
 
-            rows, scores = search_local_batch(
-                q_emb,
-                item_indices,
-                item_embeddings,
+            # Возвращаются positions внутри local_item_embeddings,
+            # а не глобальные rows корпуса.
+            local_rows, scores = search_local_batch(
+                query_embeddings=q_emb,
+                local_item_embeddings=local_item_embeddings,
                 k=K,
             )
+
+            # Переводим local positions обратно
+            # в глобальные row indices items.
+            global_rows = item_indices[local_rows]
 
             for i, query_pos in enumerate(batch_positions):
                 query_id = query_ids[query_pos]
 
-                valid = rows[i] >= 0
+                selected_rows = global_rows[i]
 
-                selected_rows = rows[i][valid]
-
-                selected_scores = scores[i][valid]
+                selected_scores = scores[i]
 
                 predictions[query_id] = item_ids[selected_rows].tolist()
 
@@ -530,37 +466,32 @@ def retrieve_global(
 
     dim = item_embeddings.shape[1]
 
+    # IndexFlatIP делает exact inner-product search.
+    # Так как item/query embeddings L2 normalized,
+    # inner product == cosine similarity.
     index = faiss.IndexFlatIP(dim)
 
     print("Building exact FAISS index...")
 
-    for start in tqdm(
-        range(
-            0,
-            len(item_embeddings),
-            GLOBAL_INDEX_ADD_BATCH,
-        ),
-        desc="FAISS add",
-    ):
-        end = min(
-            start + GLOBAL_INDEX_ADD_BATCH,
-            len(item_embeddings),
-        )
+    item_embeddings_faiss = np.ascontiguousarray(
+        item_embeddings,
+        dtype=np.float32,
+    )
 
-        chunk = np.ascontiguousarray(
-            item_embeddings[start:end],
-            dtype=np.float32,
-        )
-
-        index.add(chunk)
+    index.add(item_embeddings_faiss)
 
     print(
         "Index size:",
         index.ntotal,
     )
 
+    # unique_query_embeddings уже содержит embeddings
+    # только уникальных semantic queries.
     scores, rows = index.search(
-        np.ascontiguousarray(unique_query_embeddings),
+        np.ascontiguousarray(
+            unique_query_embeddings,
+            dtype=np.float32,
+        ),
         K,
     )
 
@@ -569,6 +500,8 @@ def retrieve_global(
     predictions = {}
     prediction_scores = {}
 
+    # semantic_codes переводит каждую исходную query signature
+    # в соответствующий unique query embedding.
     for pos, query_id in enumerate(query_ids):
         semantic_idx = semantic_codes[pos]
 
@@ -749,6 +682,7 @@ def main():
         len(unique_texts),
     )
 
+    # Кодируем только уникальные semantic queries.
     unique_query_embeddings = model.encode(
         unique_texts,
         batch_size=ENCODE_BATCH_SIZE,
@@ -761,6 +695,9 @@ def main():
     )
 
     # Local needs embedding for every signature.
+    #
+    # semantic_codes восстанавливает embedding
+    # для каждой исходной строки val_queries.
     query_embeddings = unique_query_embeddings[semantic_codes]
 
     del model
@@ -777,10 +714,10 @@ def main():
         local_scores,
     ) = retrieve_local(
         queries=val_queries,
-        query_embeddings=(query_embeddings),
+        query_embeddings=query_embeddings,
         items=items,
         item_ids=item_ids,
-        item_embeddings=(item_embeddings),
+        item_embeddings=item_embeddings,
     )
 
     evaluate_retriever(
@@ -808,10 +745,10 @@ def main():
         global_scores,
     ) = retrieve_global(
         queries=val_queries,
-        semantic_codes=(semantic_codes),
-        unique_query_embeddings=(unique_query_embeddings),
+        semantic_codes=semantic_codes,
+        unique_query_embeddings=unique_query_embeddings,
         item_ids=item_ids,
-        item_embeddings=(item_embeddings),
+        item_embeddings=item_embeddings,
     )
 
     evaluate_retriever(

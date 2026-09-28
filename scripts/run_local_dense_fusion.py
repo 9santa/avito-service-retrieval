@@ -1,3 +1,5 @@
+"""Оценивает совместимость local lexical, local dense и global dense источников."""
+
 import pickle
 from pathlib import Path
 
@@ -147,7 +149,7 @@ def main():
     )
 
     # Dense standalone сильнее lexical,
-    # поэтому сразу проверяем небольшой boost.
+    # поэтому сразу проверяем небольшой доп. вес
     evaluate_rrf(
         "dense(x1.5) + char + word",
         [

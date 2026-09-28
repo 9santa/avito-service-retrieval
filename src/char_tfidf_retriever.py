@@ -1,3 +1,5 @@
+"""Глобальный character TF-IDF baseline."""
+
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,6 +18,8 @@ def build_item_text(items: pd.DataFrame):
 
 
 class CharTfidfRetriever:
+    """Character n-gram TF-IDF retriever, устойчивый к формам слов и опечаткам."""
+
     def __init__(
         self,
         ngram_range=(3, 5),

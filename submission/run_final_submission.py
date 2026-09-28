@@ -1,3 +1,5 @@
+"""Обучает финальный LambdaRank selector и формирует answer.csv."""
+
 import gc
 import pickle
 import re
@@ -116,6 +118,8 @@ def validate_alignment(
     predictions,
     scores,
 ):
+    """Проверяет, что raw scores позиционно соответствуют candidate lists каждого source."""
+
     for source in predictions:
         for query_id, items in list(predictions[source].items())[:1000]:
             source_scores = scores[source].get(
@@ -211,6 +215,9 @@ def main():
     print("BUILD FINAL TRAIN MATRIX")
     print("=" * 80)
 
+    # Финальный selector учим на leakage-safe признаках val_part. Microcat prior для этих
+    # запросов был построен только по train_part; использование full train
+    # позволило бы запросу подсмотреть собственную историю.
     val_builder = RankerFeatureBuilder(
         items=train_items,
         queries=val_queries,

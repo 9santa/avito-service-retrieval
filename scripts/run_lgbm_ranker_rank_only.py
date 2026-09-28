@@ -1,3 +1,5 @@
+"""Ранний rank-only LightGBM baseline для проверки ценности richer query-item features."""
+
 import pickle
 from pathlib import Path
 
@@ -181,11 +183,9 @@ def build_lgbm_dataset(
 
     Returns
     -------
-    X
-        float32 matrix.
+    X   float32 matrix.
 
-    y
-        uint8 relevance labels.
+    y   uint8 relevance labels.
 
     group_sizes
         Размер candidate pool каждого запроса.
@@ -335,7 +335,7 @@ def union_pool_predictions(
 ):
     """
     Полный union всех retriever top-50.
-    Используется как theoretical upper bound текущего candidate pool.
+    Используется как upper bound текущего candidate pool.
     """
     result = {}
 

@@ -1,3 +1,5 @@
+"""Запускает и оценивает глобальный character TF-IDF baseline."""
+
 from pathlib import Path
 
 import pandas as pd

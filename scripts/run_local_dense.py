@@ -1,3 +1,5 @@
+"""Строит location-aware E5 dense кандидатов и сохраняет raw cosine scores."""
+
 import pickle
 from pathlib import Path
 
@@ -49,7 +51,6 @@ ITEM_ENCODE_CHUNK_SIZE = 4096
 # Сколько queries одновременно участвуют
 # в local matrix multiplication.
 QUERY_BATCH_SIZE = 128
-
 
 
 def main():
@@ -123,12 +124,6 @@ def main():
 
     # -----------------------------------------------------------------
     # Item embeddings
-    #
-    # Первый запуск:
-    #   embeddings посчитаются и сохранятся.
-    #
-    # Следующие запуски:
-    #   будет mmap существующего .npy.
     # -----------------------------------------------------------------
 
     retriever.fit(

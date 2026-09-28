@@ -1,3 +1,5 @@
+"""Глобальный BM25 baseline по тексту объявления."""
+
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
@@ -15,6 +17,8 @@ def build_item_text(items: pd.DataFrame):
 
 
 class BM25Retriever:
+    """Классический BM25 по title + item params; используется как global baseline."""
+
     def __init__(
         self,
         k1=1.5,
@@ -36,6 +40,8 @@ class BM25Retriever:
         self.item_ids = None
 
     def fit(self, items: pd.DataFrame):
+        """Строит sparse BM25 document matrix и сохраняет соответствующий порядок item_id."""
+
         item_texts = build_item_text(items)
 
         # term-frequency matrix: (documents, terms)
@@ -90,6 +96,8 @@ class BM25Retriever:
         k=50,
         batch_size=256,
     ):
+        """Возвращает top-k BM25 кандидатов для каждой строки queries."""
+
         query_matrix = self.vectorizer.transform(queries[query_col].fillna("")).tocsr()
 
         query_matrix.data[:] = 1.0

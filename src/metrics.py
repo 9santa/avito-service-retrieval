@@ -1,3 +1,5 @@
+"""Метрики и построение ground-truth labels для retrieval-экспериментов."""
+
 import pandas as pd
 
 

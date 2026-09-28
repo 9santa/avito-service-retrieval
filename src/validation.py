@@ -1,3 +1,5 @@
+"""Cold-query валидация: нормализация запросов, query signature и group split без пересечения текста."""
+
 import re
 
 import pandas as pd
@@ -30,7 +32,8 @@ def normalize_query(text):
 
 def add_query_signature(df: pd.DataFrame):
     """
-    Создает идентификатор (сигнатуру) уникальной комбинаци признаков запроса.
+    Создает идентификатор (сигнатуру) уникальной комбинаци признаков запроса,
+    на уровне которой считается Recall.
     """
     df = df.copy()
 
@@ -53,7 +56,8 @@ def make_validation_split(
     random_state=42,
 ):
     """
-    Разделяет train по нормализованному тексту запроса.
+    Разделяет train на cold-query train_part/val_part
+    по нормализованному тексту запроса.
 
     Один search_query_norm целиком попадает либо в train, либо в validation.
     """

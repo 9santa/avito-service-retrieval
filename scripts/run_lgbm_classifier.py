@@ -1,8 +1,9 @@
+"""Эксперимент: binary LightGBM classifier вместо LambdaRank."""
+
 import gc
 import pickle
 from pathlib import Path
 
-import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
@@ -512,7 +513,7 @@ def main():
     # Пока БЕЗ early stopping:
     # binary_logloss/AUC тоже не совпадают с Recall@50.
     #
-    # Первый чистый эксперимент:
+    # Чистый эксперимент:
     # same features + binary objective.
     # =================================================================
 
@@ -547,7 +548,7 @@ def main():
     print("Classifier trained.")
 
     # =================================================================
-    # Release TRAIN memory before building eval
+    # Release train memory before building eval
     # =================================================================
 
     del X_train

@@ -1,3 +1,5 @@
+"""Строит global E5 dense кандидатов по query + search params."""
+
 import pickle
 from pathlib import Path
 

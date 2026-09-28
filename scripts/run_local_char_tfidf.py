@@ -1,3 +1,5 @@
+"""Строит location-aware char TF-IDF кандидатов и сохраняет raw cosine scores."""
+
 import pickle
 from pathlib import Path
 

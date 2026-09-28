@@ -1,3 +1,5 @@
+"""Запускает и оценивает глобальный BM25 baseline."""
+
 from pathlib import Path
 
 import pandas as pd
