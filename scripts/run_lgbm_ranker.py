@@ -50,6 +50,8 @@ PREDICTION_FILES = {
     "dense_local": PRED_DIR / "dense_local_val.pkl",
     "dense_global": PRED_DIR / "dense_val.pkl",
     "dense_microcat": PRED_DIR / "dense_microcat_top1_val.pkl",
+    "dense_desc_local": PRED_DIR / "dense_desc_local_val.pkl",
+    "dense_desc_global": PRED_DIR / "dense_desc_global_val.pkl",
 }
 
 
@@ -59,6 +61,8 @@ SCORE_FILES = {
     "dense_local": PRED_DIR / "dense_local_scores_val.pkl",
     "dense_global": PRED_DIR / "dense_scores_val.pkl",
     "dense_microcat": PRED_DIR / "dense_microcat_top1_scores_val.pkl",
+    "dense_desc_local": PRED_DIR / "dense_desc_local_scores_val.pkl",
+    "dense_desc_global": PRED_DIR / "dense_desc_global_scores_val.pkl",
 }
 
 MICROCAT_PRIOR_PATH = Path("artifacts/features/microcat_prior_val.pkl")
@@ -287,12 +291,23 @@ def main():
         meta_eval_query_ids,
     )
 
-    # Local 3-source RRF
+    dense_desc_local_eval = subset_predictions(
+        predictions["dense_desc_local"],
+        meta_eval_query_ids,
+    )
+
+    dense_desc_global_eval = subset_predictions(
+        predictions["dense_desc_global"],
+        meta_eval_query_ids,
+    )
+
+    # Local 4-source RRF
     rrf_local = rrf_fusion(
         [
             dense_local_eval,
             char_eval,
             word_eval,
+            dense_desc_local_eval,
         ],
         k=50,
         rrf_k=60,
@@ -301,10 +316,10 @@ def main():
     print_recall_table(
         eval_labels,
         rrf_local,
-        "Local dense + char + word RRF",
+        "Local dense + char + word RRF + dense desc local",
     )
 
-    # All 5 source RRF
+    # All 7 source RRF
     rrf_all = rrf_fusion(
         [
             dense_local_eval,
@@ -312,6 +327,8 @@ def main():
             word_eval,
             dense_global_eval,
             dense_microcat_eval,
+            dense_desc_local_eval,
+            dense_desc_global_eval,
         ],
         k=50,
         rrf_k=60,
@@ -320,7 +337,7 @@ def main():
     print_recall_table(
         eval_labels,
         rrf_all,
-        "All 5 sources RRF",
+        "All 7 sources RRF",
     )
 
     # Full pool
@@ -331,6 +348,8 @@ def main():
             word_eval,
             dense_global_eval,
             dense_microcat_eval,
+            dense_desc_local_eval,
+            dense_desc_global_eval,
         ]
     )
 
@@ -343,7 +362,7 @@ def main():
     pool_sizes = np.asarray([len(items_) for items_ in eval_pool.values()])
 
     print(
-        "All 5 full pool recall:",
+        "All 7 full pool recall:",
         f"{pool_recall:.6f}",
     )
 

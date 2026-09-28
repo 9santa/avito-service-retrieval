@@ -73,6 +73,8 @@ SCORE_SOURCE_NAMES = [
     "dense_local",
     "dense_global",
     "dense_microcat",
+    "dense_desc_local",
+    "dense_desc_global",
 ]
 
 SCORE_FEATURE_NAMES = [
@@ -129,8 +131,14 @@ FEATURE_NAMES = [
     "microcat_top3_match",
     "microcat_top5_match",
     "microcat_support",
+    "dense_microcat_present",
     "neighbor_query_sim_top1",
     "neighbor_query_sim_mean5",
+    # dense item description
+    "dense_desc_local_rank",
+    "dense_desc_global_rank",
+    "dense_desc_local_present",
+    "dense_desc_global_present",
 ]
 
 
@@ -157,12 +165,15 @@ class RankerFeatureBuilder:
         "dense_local",
         "dense_global",
         "dense_microcat",
+        "dense_desc_local",
+        "dense_desc_global",
     ]
 
     LOCAL_SOURCE_NAMES = [
         "char_local",
         "word_local",
         "dense_local",
+        "dense_desc_local",
     ]
 
     def __init__(
@@ -536,6 +547,14 @@ class RankerFeatureBuilder:
                 self.missing_rank,
             )
 
+            dense_desc_local_rank = rank_maps["dense_desc_local"].get(
+                item_id, self.missing_rank
+            )
+
+            dense_desc_global_rank = rank_maps["dense_desc_global"].get(
+                item_id, self.missing_rank
+            )
+
             char_present = float(char_rank != self.missing_rank)
 
             word_present = float(word_rank != self.missing_rank)
@@ -546,6 +565,12 @@ class RankerFeatureBuilder:
 
             dense_microcat_present = float(dense_microcat_rank != self.missing_rank)
 
+            dense_desc_local_present = float(dense_desc_local_rank != self.missing_rank)
+
+            dense_desc_global_present = float(
+                dense_desc_global_rank != self.missing_rank
+            )
+
             present_ranks = []
 
             for rank in [
@@ -554,13 +579,20 @@ class RankerFeatureBuilder:
                 dense_local_rank,
                 dense_global_rank,
                 dense_microcat_rank,
+                dense_desc_local_rank,
+                dense_desc_global_rank,
             ]:
                 if rank != self.missing_rank:
                     present_ranks.append(rank)
 
             num_sources = len(present_ranks)
 
-            local_source_count = int(char_present + word_present + dense_local_present)
+            local_source_count = int(
+                char_present
+                + word_present
+                + dense_local_present
+                + dense_desc_local_present
+            )
 
             global_dense_only = float(dense_global_present and local_source_count == 0)
 
@@ -600,12 +632,14 @@ class RankerFeatureBuilder:
 
                 query_score_range = context["query_range"]
 
-                score_feature_values.extend([
-                    raw_score,
-                    gap_to_top,
-                    margin_over_last,
-                    query_score_range,
-                ])
+                score_feature_values.extend(
+                    [
+                        raw_score,
+                        gap_to_top,
+                        margin_over_last,
+                        query_score_range,
+                    ]
+                )
 
             # ---------------------------------------------------------
             # Location
@@ -787,8 +821,14 @@ class RankerFeatureBuilder:
                 microcat_top3_match,
                 microcat_top5_match,
                 microcat_support,
+                dense_microcat_present,
                 neighbor_query_sim_top1,
                 neighbor_query_sim_mean5,
+                # dense item description
+                dense_desc_local_rank,
+                dense_desc_global_rank,
+                dense_desc_local_present,
+                dense_desc_global_present,
             ]
 
         return candidates, X
