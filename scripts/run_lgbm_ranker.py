@@ -49,10 +49,17 @@ PREDICTION_FILES = {
     "word_local": PRED_DIR / "word_local_val.pkl",
     "dense_local": PRED_DIR / "dense_local_val.pkl",
     "dense_global": PRED_DIR / "dense_val.pkl",
+    "dense_microcat": PRED_DIR / "dense_microcat_top1_val.pkl",
 }
 
 
-DENSE_LOCAL_SCORES_PATH = PRED_DIR / "dense_local_scores_val.pkl"
+SCORE_FILES = {
+    "char_local": PRED_DIR / "char_local_scores_val.pkl",
+    "word_local": PRED_DIR / "word_local_scores_val.pkl",
+    "dense_local": PRED_DIR / "dense_local_scores_val.pkl",
+    "dense_global": PRED_DIR / "dense_scores_val.pkl",
+    "dense_microcat": PRED_DIR / "dense_microcat_top1_scores_val.pkl",
+}
 
 MICROCAT_PRIOR_PATH = Path("artifacts/features/microcat_prior_val.pkl")
 
@@ -165,12 +172,16 @@ def main():
 
         predictions[name] = load_pickle(path)
 
-    print(
-        "Loading dense scores:",
-        DENSE_LOCAL_SCORES_PATH,
-    )
+    print()
+    print("=" * 80)
+    print("LOAD RETRIEVAL SCORES")
+    print("=" * 80)
 
-    dense_local_scores = load_pickle(DENSE_LOCAL_SCORES_PATH)
+    retrieval_scores = {}
+
+    for name, path in SCORE_FILES.items():
+        print(f"Loading {name}: {path}")
+        retrieval_scores[name] = load_pickle(path)
 
     # =================================================================
     # Load microcat prior
@@ -271,6 +282,11 @@ def main():
         meta_eval_query_ids,
     )
 
+    dense_microcat_eval = subset_predictions(
+        predictions["dense_microcat"],
+        meta_eval_query_ids,
+    )
+
     # Local 3-source RRF
     rrf_local = rrf_fusion(
         [
@@ -288,13 +304,14 @@ def main():
         "Local dense + char + word RRF",
     )
 
-    # All 4 source RRF
+    # All 5 source RRF
     rrf_all = rrf_fusion(
         [
             dense_local_eval,
             char_eval,
             word_eval,
             dense_global_eval,
+            dense_microcat_eval,
         ],
         k=50,
         rrf_k=60,
@@ -303,7 +320,7 @@ def main():
     print_recall_table(
         eval_labels,
         rrf_all,
-        "All 4 sources RRF",
+        "All 5 sources RRF",
     )
 
     # Full pool
@@ -313,6 +330,7 @@ def main():
             char_eval,
             word_eval,
             dense_global_eval,
+            dense_microcat_eval,
         ]
     )
 
@@ -325,7 +343,7 @@ def main():
     pool_sizes = np.asarray([len(items_) for items_ in eval_pool.values()])
 
     print(
-        "All 4 full pool recall:",
+        "All 5 full pool recall:",
         f"{pool_recall:.6f}",
     )
 
@@ -351,7 +369,7 @@ def main():
         items=items,
         queries=queries,
         predictions=predictions,
-        dense_local_scores=(dense_local_scores),
+        retrieval_scores=retrieval_scores,
         microcat_priors=microcat_priors,
         missing_rank=51,
         rrf_k=60,

@@ -67,17 +67,26 @@ def overlap_stats(a, b):
 # Feature names
 # ---------------------------------------------------------------------
 
+SCORE_SOURCE_NAMES = [
+    "char_local",
+    "word_local",
+    "dense_local",
+    "dense_global",
+    "dense_microcat",
+]
+
+SCORE_FEATURE_NAMES = [
+    f"{source}_{suffix}"
+    for source in SCORE_SOURCE_NAMES
+    for suffix in [
+        "score",
+        "gap_to_top",
+        "margin_over_last",
+        "query_score_range",
+    ]
+]
+
 FEATURE_NAMES = [
-    # retrieval ranks
-    "char_local_rank",
-    "word_local_rank",
-    "dense_local_rank",
-    "dense_global_rank",
-    # source presence
-    "char_local_present",
-    "word_local_present",
-    "dense_local_present",
-    "dense_global_present",
     # source agreement
     "num_sources",
     "local_source_count",
@@ -85,11 +94,8 @@ FEATURE_NAMES = [
     "best_present_rank",
     "mean_present_rank",
     "rrf_score",
-    # dense confidence
-    "local_dense_score",
-    "local_dense_gap_to_top",
-    "local_dense_margin_over_last",
-    "local_dense_query_range",
+    # raw retrieval confidence
+    *SCORE_FEATURE_NAMES,
     # location
     "same_location",
     "query_location_items_log1p",
@@ -136,6 +142,7 @@ class RankerFeatureBuilder:
         word_local
         dense_local
         dense_global
+        dense_microcat
 
     Важное:
     - candidate pool НЕ ограничиваем top-50;
@@ -149,6 +156,7 @@ class RankerFeatureBuilder:
         "word_local",
         "dense_local",
         "dense_global",
+        "dense_microcat",
     ]
 
     LOCAL_SOURCE_NAMES = [
@@ -162,7 +170,7 @@ class RankerFeatureBuilder:
         items: pd.DataFrame,
         queries: pd.DataFrame,
         predictions: dict,
-        dense_local_scores: dict,
+        retrieval_scores: dict,
         microcat_priors: dict,
         missing_rank=51,
         rrf_k=60,
@@ -172,7 +180,11 @@ class RankerFeatureBuilder:
         self.queries = queries
 
         self.predictions = predictions
-        self.dense_local_scores = dense_local_scores
+        self.retrieval_scores = retrieval_scores
+
+        for source in SCORE_SOURCE_NAMES:
+            if source not in self.retrieval_scores:
+                raise ValueError(f"Missing retrieval scores for source: {source}")
 
         # -------------------------------------------------------------
         # microcats
@@ -297,7 +309,7 @@ class RankerFeatureBuilder:
         query_id,
     ):
         """
-        Union всех 4 источников без ограничения k=50.
+        Union всех 5 источников без ограничения k=50.
         """
         # Так как set не сохраняет порядок, используем список
         result = []
@@ -331,8 +343,7 @@ class RankerFeatureBuilder:
         Возвращает:
             candidates
             rank maps
-            dense score map
-            query-level dense stats
+            per-source score maps and query-level score stats
         """
         rank_maps = {}
 
@@ -362,46 +373,42 @@ class RankerFeatureBuilder:
 
             rank_maps[source_name] = rank_map
 
-        # -------------------------------------------------------------
-        # Dense scores
-        # -------------------------------------------------------------
+        score_contexts = {}
 
-        dense_items = self.predictions["dense_local"].get(
-            query_id,
-            [],
-        )
+        for source_name in SCORE_SOURCE_NAMES:
+            source_items = self.predictions[source_name].get(query_id, [])
+            source_scores = self.retrieval_scores[source_name].get(query_id, [])
 
-        dense_scores = self.dense_local_scores.get(
-            query_id,
-            [],
-        )
+            if len(source_items) != len(source_scores):
+                raise ValueError(
+                    f"Prediction/score length mismatch "
+                    f"for {source_name}, query={query_id}: "
+                    f"{len(source_items)} items vs {len(source_scores)} scores"
+                )
 
-        dense_score_map = {
-            item_id: float(score)
-            for item_id, score in zip(
-                dense_items,
-                dense_scores,
-            )
-        }
+            score_map = {
+                item_id: float(score)
+                for item_id, score in zip(source_items, source_scores)
+            }
 
-        if dense_scores:
-            dense_top_score = float(dense_scores[0])
+            if len(source_scores):
+                top_score = float(source_scores[0])
+                last_score = float(source_scores[-1])
+            else:
+                top_score = 0.0
+                last_score = 0.0
 
-            dense_last_score = float(dense_scores[-1])
-
-            dense_query_range = dense_top_score - dense_last_score
-        else:
-            dense_top_score = 0.0
-            dense_last_score = 0.0
-            dense_query_range = 0.0
+            score_contexts[source_name] = {
+                "score_map": score_map,
+                "top_score": top_score,
+                "last_score": last_score,
+                "query_range": top_score - last_score,
+            }
 
         return (
             candidates,
             rank_maps,
-            dense_score_map,
-            dense_top_score,
-            dense_last_score,
-            dense_query_range,
+            score_contexts,
         )
 
     # -----------------------------------------------------------------
@@ -415,10 +422,7 @@ class RankerFeatureBuilder:
         (
             candidates,
             rank_maps,
-            dense_score_map,
-            dense_top_score,
-            dense_last_score,
-            dense_query_range,
+            score_contexts,
         ) = self._source_context(query_id)
 
         n = len(candidates)
@@ -527,6 +531,11 @@ class RankerFeatureBuilder:
                 self.missing_rank,
             )
 
+            dense_microcat_rank = rank_maps["dense_microcat"].get(
+                item_id,
+                self.missing_rank,
+            )
+
             char_present = float(char_rank != self.missing_rank)
 
             word_present = float(word_rank != self.missing_rank)
@@ -535,6 +544,8 @@ class RankerFeatureBuilder:
 
             dense_global_present = float(dense_global_rank != self.missing_rank)
 
+            dense_microcat_present = float(dense_microcat_rank != self.missing_rank)
+
             present_ranks = []
 
             for rank in [
@@ -542,6 +553,7 @@ class RankerFeatureBuilder:
                 word_rank,
                 dense_local_rank,
                 dense_global_rank,
+                dense_microcat_rank,
             ]:
                 if rank != self.missing_rank:
                     present_ranks.append(rank)
@@ -568,21 +580,32 @@ class RankerFeatureBuilder:
                 rrf_score += 1.0 / (self.rrf_k + rank)
 
             # ---------------------------------------------------------
-            # Dense confidence
+            # Retrieval confidence
             # ---------------------------------------------------------
 
-            local_dense_score = dense_score_map.get(
-                item_id,
-                0.0,
-            )
+            score_feature_values = []
 
-            if dense_local_present:
-                dense_gap_to_top = dense_top_score - local_dense_score
+            for source_name in SCORE_SOURCE_NAMES:
+                context = score_contexts[source_name]
+                score_map = context["score_map"]
 
-                dense_margin_over_last = local_dense_score - dense_last_score
-            else:
-                dense_gap_to_top = 0.0
-                dense_margin_over_last = 0.0
+                if item_id in score_map:
+                    raw_score = float(score_map[item_id])
+                    gap_to_top = context["top_score"] - raw_score
+                    margin_over_last = raw_score - context["last_score"]
+                else:
+                    raw_score = 0.0
+                    gap_to_top = 0.0
+                    margin_over_last = 0.0
+
+                query_score_range = context["query_range"]
+
+                score_feature_values.extend([
+                    raw_score,
+                    gap_to_top,
+                    margin_over_last,
+                    query_score_range,
+                ])
 
             # ---------------------------------------------------------
             # Location
@@ -722,16 +745,6 @@ class RankerFeatureBuilder:
             # ---------------------------------------------------------
 
             X[j] = [
-                # ranks
-                char_rank,
-                word_rank,
-                dense_local_rank,
-                dense_global_rank,
-                # presence
-                char_present,
-                word_present,
-                dense_local_present,
-                dense_global_present,
                 # agreement
                 num_sources,
                 local_source_count,
@@ -739,11 +752,8 @@ class RankerFeatureBuilder:
                 best_present_rank,
                 mean_present_rank,
                 rrf_score,
-                # dense
-                local_dense_score,
-                dense_gap_to_top,
-                dense_margin_over_last,
-                dense_query_range,
+                # all retrieval scores
+                *score_feature_values,
                 # location
                 same_location,
                 query_location_log,
