@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+
+from src.local_dense_retriever import build_dense_query_text
 
 
 def build_dense_item_text(items: pd.DataFrame):
@@ -13,13 +17,14 @@ def build_dense_item_text(items: pd.DataFrame):
     return "passage: " + title + " " + params
 
 
-class GlobalDenseRetriver:
+class GlobalDenseRetriever:
     def __init__(
         self,
         model_name="intfloat/multilingual-e5-base",
         batch_size=64,
         max_seq_len=256,
         device="cuda",
+        fp16=False,
     ):
         self.model = SentenceTransformer(
             model_name,
@@ -28,12 +33,56 @@ class GlobalDenseRetriver:
 
         self.model.max_seq_length = max_seq_len
 
+        if fp16 and device.startswith("cuda"):
+            self.model.half()
+
         self.batch_size = batch_size
         self.index = None
         self.item_ids = None
 
-    def fit(self, items: pd.DataFrame):
+    def fit(
+        self,
+        items: pd.DataFrame,
+        embeddings_path=None,
+        embedding_ids_path=None,
+        index_add_batch_size=20_000,
+    ):
         self.item_ids = items["item_id"].to_numpy()
+
+        if embeddings_path is not None:
+            embeddings_path = Path(embeddings_path)
+            item_embeddings = np.load(embeddings_path, mmap_mode="r")
+
+            if len(item_embeddings) != len(items):
+                raise ValueError("Embedding count != corpus size")
+
+            if embedding_ids_path is None:
+                embedding_ids_path = embeddings_path.with_name(
+                    embeddings_path.stem + "_item_ids.npy"
+                )
+
+            embedding_ids_path = Path(embedding_ids_path)
+            if embedding_ids_path.exists():
+                cached_ids = np.load(embedding_ids_path, allow_pickle=True)
+                if not np.array_equal(cached_ids, self.item_ids):
+                    raise ValueError("Item order does not match embedding cache.")
+
+                print("Item ID alignment: OK")
+
+            print("Item embeddings:", item_embeddings.shape)
+            self.index = faiss.IndexFlatIP(item_embeddings.shape[1])
+
+            for start in tqdm(
+                range(0, len(item_embeddings), index_add_batch_size),
+                desc="Building FAISS index",
+            ):
+                chunk = np.ascontiguousarray(
+                    item_embeddings[start : start + index_add_batch_size],
+                    dtype=np.float32,
+                )
+                self.index.add(chunk)
+
+            return self
 
         texts = build_dense_item_text(items)
 
@@ -68,11 +117,26 @@ class GlobalDenseRetriver:
         queries: pd.DataFrame,
         query_col="search_query_norm",
         k=50,
+        return_scores=False,
     ):
-        texts = "query: " + queries[query_col].fillna("").astype(str)
+        if self.index is None:
+            raise RuntimeError("Call fit() before retrieve().")
+
+        if queries.empty:
+            return ({}, {}) if return_scores else {}
+
+        if "search_infm_params_text" in queries:
+            texts = build_dense_query_text(
+                queries.assign(search_query_norm=queries[query_col])
+            )
+        else:
+            texts = "query: " + queries[query_col].fillna("").astype(str)
+
+        codes, unique_texts = pd.factorize(texts, sort=False)
+        print("Unique semantic queries:", len(unique_texts))
 
         query_embeddings = self.model.encode(
-            texts.tolist(),
+            unique_texts.tolist(),
             batch_size=self.batch_size,
             normalize_embeddings=True,
             convert_to_numpy=True,
@@ -80,15 +144,21 @@ class GlobalDenseRetriver:
         ).astype(np.float32)
 
         scores, indices = self.index.search(
-            query_embeddings,
+            np.ascontiguousarray(query_embeddings),
             k=k,
         )
 
         predictions = {}
+        prediction_scores = {}
 
         for i, query_key in enumerate(queries.index):
-            valid = indices[i] >= 0
+            semantic_idx = codes[i]
+            valid = indices[semantic_idx] >= 0
 
-            predictions[query_key] = self.item_ids[indices[i][valid]].tolist()
+            predictions[query_key] = self.item_ids[indices[semantic_idx][valid]].tolist()
+            prediction_scores[query_key] = scores[semantic_idx][valid].astype(float).tolist()
 
+        if return_scores:
+            return predictions, prediction_scores
         return predictions
+
